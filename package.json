@@ -1,0 +1,20 @@
+{
+  "name": "cyberdate",
+  "version": "0.1.0",
+  "private": false,
+  "description": "Public trust-facing core for CyberDate: local parsing, skill distill, MBTI/SBTI scoring, skill file generation, and zero-retention boundary.",
+  "scripts": {
+    "check:types": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "pdfjs-dist": "^5.4.296",
+    "tesseract.js": "^6.0.1",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "typescript": "^5",
+    "vitest": "^3.2.4"
+  }
+}
