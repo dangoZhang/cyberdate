@@ -7,6 +7,13 @@ export type SourceKind =
   | "github";
 
 export type ShareScope = "public" | "matches" | "private";
+export type AttachmentStyle = "安全型" | "焦虑型" | "回避型" | "混乱型";
+export type LoveLanguage =
+  | "肯定的言辞"
+  | "精心的时刻"
+  | "接受礼物"
+  | "服务的行动"
+  | "身体的接触";
 
 export type StyleAxisKey =
   | "shipVelocity"
@@ -79,6 +86,7 @@ export interface SkillPack {
   provider: "deterministic" | "openai" | "deepseek";
   model?: string;
   createdAt: string;
+  exSkill?: ExSkillCoreProfile;
 }
 
 export interface SkillTag {
@@ -103,7 +111,7 @@ export interface QuizResult {
 export interface PersonalityAnswer {
   id: string;
   prompt: string;
-  answer: "A" | "B";
+  answer: "A" | "B" | "C";
   rationale: string;
 }
 
@@ -111,16 +119,67 @@ export interface ImsbResult extends QuizResult {
   scores: Record<"I" | "M" | "S" | "B", number>;
 }
 
+export interface Mbti64Result {
+  baseCode: string;
+  code: string;
+  variantKey: "driven" | "steady" | "expressive" | "reflective";
+  label: string;
+  summary: string;
+}
+
+export interface ExSkillLabelProfile {
+  attachmentStyle: AttachmentStyle;
+  loveLanguages: LoveLanguage[];
+  traitTags: string[];
+  zodiac: string | null;
+  mbti64: Mbti64Result;
+}
+
+export interface ExSkillCoreProfile {
+  relationshipMemory: string;
+  persona: string;
+  skillPrompt: string;
+  labels: ExSkillLabelProfile;
+}
+
 export interface SbtiArchetype {
   code: string;
   title: string;
   summary: string;
   meme: string;
+  imagePath?: string;
+  badge?: string;
+  similarity?: number;
+  pattern?: string;
+  levels?: Record<string, "L" | "M" | "H">;
 }
 
 export interface SharePolicy {
   scope: ShareScope;
   capsule: string;
+}
+
+export interface MatchProfile {
+  enabled: boolean;
+  age: number | null;
+  gender: string;
+  city: string;
+  education: string;
+  bio: string;
+  lookingFor: string;
+  normalizedTags: string[];
+  updatedAt: string;
+}
+
+export interface MatchScoreBreakdown {
+  skill: number;
+  goal: number;
+  style: number;
+  personality: number;
+  context: number;
+  tags: number;
+  fairness: number;
+  repeatPenalty: number;
 }
 
 export interface DistilledSkillProfile {
@@ -166,6 +225,7 @@ export interface TwinCard {
   skillProfile?: DistilledSkillProfile;
   memoryProfile?: DistilledMemoryProfile;
   personaProfile?: DistilledPersonaProfile;
+  exSkill?: ExSkillCoreProfile;
   personalityAnswers?: {
     mbti: PersonalityAnswer[];
     sbti: PersonalityAnswer[];
@@ -186,13 +246,45 @@ export interface ExchangeMessage {
 }
 
 export interface ExchangeMatchPreview {
-  shareCode: string;
+  matchId?: string;
+  shareCode?: string;
   alias: string;
   role: string;
   headline: string;
   summary: string;
   skills: SkillTag[];
   sbtiCode: string;
+  age?: number | null;
+  gender?: string | null;
+  city?: string | null;
+  education?: string | null;
+}
+
+export interface MatchSuggestion {
+  id: string;
+  dayKey: string;
+  targetAccountId: string;
+  alias: string;
+  role: string;
+  headline: string;
+  summary: string;
+  age: number | null;
+  gender: string;
+  city: string;
+  education: string;
+  mbtiCode: string;
+  sbtiCode: string;
+  skills: SkillTag[];
+  reasons: string[];
+  score: number;
+  scoreBreakdown: MatchScoreBreakdown;
+  autoExchange: {
+    messages: ExchangeMessage[];
+    summary: string;
+    nextLine: string;
+    consumedSentences: number;
+  };
+  createdAt: string;
 }
 
 export interface ExchangeQuota {
@@ -228,12 +320,8 @@ export type ShareEnvelope = PublicShareEnvelope | ProtectedShareEnvelope;
 export interface RuntimeDistillResult {
   twin: TwinCard;
   skillPack: SkillPack;
-  provider: "deterministic" | "openai" | "deepseek";
+  provider: "openai" | "deepseek";
   model?: string;
-  fallbackUsed: boolean;
-  fallbackReason?: string;
-  requestedProvider?: "openai" | "deepseek";
-  requestedModel?: string;
   embeddingInput: string;
   embedding?: number[] | null;
 }

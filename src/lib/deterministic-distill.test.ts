@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { distillSignalBundle, distillSignalBundleWithBaseline } from "@/lib/deterministic-distill";
+import { getSbtiTestTypeMeta } from "@/lib/sbti-test";
 import type { SignalBundle } from "@/lib/types";
 
 const bundle: SignalBundle = {
@@ -55,8 +56,15 @@ describe("distillSignalBundle", () => {
     expect(twin.skills).toHaveLength(3);
     expect(twin.evidence).toHaveLength(1);
     expect(twin.sharePolicy.scope).toBe("matches");
-    expect(twin.sbti.code).toHaveLength(4);
+    expect(getSbtiTestTypeMeta(twin.sbti.code)?.imagePath).toContain("/sbti-test/");
     expect(twin.mbti.code).toMatch(/^[EI][SN][TF][JP]$/);
+    expect(twin.exSkill?.relationshipMemory).toContain("Relationship Memory");
+    expect(twin.exSkill?.persona).toContain("Layer 0");
+    expect(twin.exSkill?.skillPrompt).toContain("## PART A：关系记忆");
+    expect(twin.exSkill?.skillPrompt).toContain("## PART B：人物性格");
+    expect(twin.exSkill?.skillPrompt).toContain("## 运行规则");
+    expect(twin.exSkill?.labels.mbti64.baseCode).toBe(twin.mbti.code);
+    expect(twin.exSkill?.labels.loveLanguages.length).toBeGreaterThan(0);
     expect(twin.imsb.code).toMatch(/^(IM|IS|IB|MI|MS|MB|SI|SM|SB|BI|BM|BS)$/);
     expect(twin.privacyStatement).toContain("结构化线索");
   });
@@ -86,5 +94,6 @@ describe("distillSignalBundle", () => {
     expect(updatedTwin.skills.some((skill) => skill.name === "AI Workflow")).toBe(true);
     expect(updatedTwin.skills.some((skill) => skill.name === "Growth Ops")).toBe(true);
     expect(updatedTwin.evidence.some((item) => item.title === "New note")).toBe(true);
+    expect(updatedTwin.exSkill?.labels.traitTags.length).toBeGreaterThan(0);
   });
 });

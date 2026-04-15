@@ -11,8 +11,25 @@ export const CONNECT_EXCHANGE_RATE_LIMIT = 20;
 export const CONNECT_EXCHANGE_RATE_WINDOW_MS = 60_000;
 export const AUTO_CHAT_RATE_LIMIT = 10;
 export const AUTO_CHAT_RATE_WINDOW_MS = 60_000;
+export const MATCH_STATE_RATE_LIMIT = 24;
+export const MATCH_STATE_RATE_WINDOW_MS = 60_000;
 export const MATCH_THRESHOLD = 61;
 export const DAILY_EXCHANGE_SENTENCE_LIMIT = 30;
+export const DAILY_MATCH_SUGGESTION_LIMIT = 3;
+export const MATCH_ACTIVE_SUGGESTION_LIMIT = 10;
+export const MATCH_AUTO_CONVERSATION_LINES = 18;
+export const MATCH_SUGGESTION_TTL_DAYS = 3;
+
+export const MATCH_GENDER_OPTIONS = ["女", "男", "非二元", "不展示"] as const;
+export const MATCH_EDUCATION_OPTIONS = [
+  "高中",
+  "大专",
+  "本科",
+  "硕士",
+  "博士",
+  "已工作",
+  "其他",
+] as const;
 
 export const AXIS_LABELS = {
   shipVelocity: "出手速度",

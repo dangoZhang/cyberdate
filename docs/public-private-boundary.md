@@ -6,12 +6,11 @@
 
 用途：
 
-- 对外建立信任
-- 公开“读取文件 -> 蒸馏 -> 不保留原始文件”的核心实现
-- 给官网和 README 提供公开代码入口
+- 对外宣传 CyberDate 产品和正式站点
+- 公开“读取文件 -> 蒸馏 -> 结果生成”的核心实现
+- 公开一条最重要的隐私合规说明
 
 公开范围：
-
 - `src/lib/parsers/client.ts`
 - `src/lib/deterministic-distill.ts`
 - `src/lib/deterministic-distill.test.ts`
@@ -25,17 +24,11 @@
 - `src/lib/types.ts`
 - `src/lib/utils.ts`
 
-公开仓不包含：
-
-- 任何 API key
-- 任何 Supabase key
-- 任何部署配置
-- 任何私有 prompt 与运营规则
-
 ## Private Repo: `cyberdate-private`
 
 保留范围：
 
+- 所有注册登录、分享码、匹配、对话、持久化、部署和密钥相关实现
 - `src/app/api/auth/**`
 - `src/app/api/connect/**`
 - `src/lib/account-store.ts`
@@ -52,22 +45,8 @@
 
 保留原因：
 
-- 这里面有认证、反机器人、持久化、配额、风控、分享码、聊天、部署和生产运行策略
+- 这里面有真实生产运行能力和所有不适合公开的运行细节
 
-## User-Facing Privacy Wording
+## 面向用户的统一隐私说法
 
-面向用户统一用这套说法：
-
-- 上传文档后，网站不会保存原始文件
-- 网站不会保存蒸馏过程中的中间产物
-- 原始文件只在处理窗口内短暂使用，处理完成后立即销毁
-
-不能省略的补充：
-
-- 产品运行时会保存账号、skill 文件、分享码、聊天记录
-
-## Release Flow
-
-1. 在完整仓里开发和验证
-2. 运行 `pnpm export:public`
-3. 发布 `output/public-repo/cyberdate` 为公开仓
+本网站不会保存用户上传的原始文件和原始文本数据。上传内容先在前端完成解析，服务端只接收生成结果必需的最小结构化线索；蒸馏完成后，原始文件和中间产物不落库、不长期保留。只有用户确认发布后的 skill 结果，才会按用户自己的分享设置保存和展示。

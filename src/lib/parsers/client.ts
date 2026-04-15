@@ -1,3 +1,5 @@
+import { strFromU8, unzipSync } from "fflate";
+
 import { SKILL_KEYWORDS } from "@/lib/constants";
 import type {
   EvidenceFragment,
@@ -9,8 +11,38 @@ import type {
 } from "@/lib/types";
 import { clamp, dedupe, simpleHash } from "@/lib/utils";
 
-const chatLinePattern =
-  /^(?:(\d{4}[-/]\d{1,2}[-/]\d{1,2})\s+)?(\d{1,2}:\d{2}(?::\d{2})?)\s+([^\n:：]{1,24})[:：]\s*(.+)$/;
+const chatLinePatterns = [
+  /^(?:(\d{4}[-/]\d{1,2}[-/]\d{1,2})\s+)?(\d{1,2}:\d{2}(?::\d{2})?)\s+([^\n:：]{1,32})[:：]\s*(.+)$/,
+  /^\[(\d{4}[-/]\d{1,2}[-/]\d{1,2})\s+(\d{1,2}:\d{2}(?::\d{2})?)\]\s*([^\n:：]{1,32})[:：]\s*(.+)$/,
+  /^([^\n:：]{1,32})\s+\((\d{4}[-/]\d{1,2}[-/]\d{1,2})\s+(\d{1,2}:\d{2}(?::\d{2})?)\)[:：]?\s*(.+)$/,
+  /^([^\n:：]{1,32})[:：]\s*(.+)$/,
+] as const;
+
+const ARCHIVE_ENTRY_LIMIT = 24;
+const ARCHIVE_ENTRY_BYTES_LIMIT = 2 * 1024 * 1024;
+const ARCHIVE_TOTAL_BYTES_LIMIT = 12 * 1024 * 1024;
+
+export type ParseUploadOptions = {
+  archiveDepth?: number;
+};
+
+type UploadFileKind =
+  | "zip"
+  | "pdf"
+  | "markdown"
+  | "image"
+  | "chat"
+  | "text";
+
+type ParsedChatEntry = {
+  speaker: string;
+  message: string;
+  hour: number | null;
+  timestamp?: string;
+};
+
+const wechatTxtHeaderPattern = /^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s+(.+)$/;
+const qqTxtHeaderPattern = /^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s+(.+?)(?:\((\d+)\))?\s*$/;
 
 function sanitizeText(text: string) {
   return text
@@ -23,6 +55,217 @@ function sanitizeText(text: string) {
 
 function tokenize(text: string) {
   return sanitizeText(text).toLowerCase();
+}
+
+function normalizeSpeakerName(value: string) {
+  return sanitizeText(value)
+    .toLowerCase()
+    .replace(/[\s"'“”‘’()[\]{}<>._-]+/g, "");
+}
+
+const AUTO_SELF_SPEAKERS = new Set(
+  dedupe(["我", "自己", "本人", "me", "myself", "self", "owner", "user"].map(normalizeSpeakerName)),
+);
+
+function speakerIsAutoDetectedSelf(speaker: string) {
+  const normalizedSpeaker = normalizeSpeakerName(speaker);
+  if (!normalizedSpeaker) return false;
+  return AUTO_SELF_SPEAKERS.has(normalizedSpeaker);
+}
+
+function parseChatLine(line: string): ParsedChatEntry | null {
+  const safeLine = line.trim();
+  if (!safeLine) return null;
+
+  for (const pattern of chatLinePatterns) {
+    const match = safeLine.match(pattern);
+    if (!match) continue;
+
+    if (pattern === chatLinePatterns[0] || pattern === chatLinePatterns[1]) {
+      const hour = Number(match[2]?.slice(0, 2));
+      return {
+        speaker: sanitizeText(match[3] ?? ""),
+        message: sanitizeText(match[4] ?? ""),
+        hour: Number.isNaN(hour) ? null : hour,
+        timestamp: `${match[1] ?? ""} ${match[2] ?? ""}`.trim(),
+      };
+    }
+
+    if (pattern === chatLinePatterns[2]) {
+      const hour = Number(match[3]?.slice(0, 2));
+      return {
+        speaker: sanitizeText(match[1] ?? ""),
+        message: sanitizeText(match[4] ?? ""),
+        hour: Number.isNaN(hour) ? null : hour,
+        timestamp: `${match[2] ?? ""} ${match[3] ?? ""}`.trim(),
+      };
+    }
+
+    return {
+      speaker: sanitizeText(match[1] ?? ""),
+      message: sanitizeText(match[2] ?? ""),
+      hour: null,
+    };
+  }
+
+  return null;
+}
+
+function parseHourFromTimestamp(value: string) {
+  const match = value.match(/\b(\d{1,2}):\d{2}(?::\d{2})?\b/);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  return Number.isNaN(hour) ? null : hour;
+}
+
+function parseWechatTxtEntries(content: string) {
+  const lines = content.replace(/\r/g, "").split("\n");
+  const entries: ParsedChatEntry[] = [];
+  let current: ParsedChatEntry | null = null;
+
+  for (const line of lines) {
+    const safeLine = line.trimEnd();
+    const match = safeLine.match(wechatTxtHeaderPattern);
+    if (match) {
+      if (current?.message.trim()) {
+        current.message = sanitizeText(current.message);
+        entries.push(current);
+      }
+      current = {
+        timestamp: match[1],
+        speaker: sanitizeText(match[2]),
+        message: "",
+        hour: parseHourFromTimestamp(match[1]),
+      };
+      continue;
+    }
+
+    if (!current) continue;
+    if (!safeLine.trim()) continue;
+    current.message = current.message ? `${current.message}\n${safeLine}` : safeLine;
+  }
+
+  if (current?.message.trim()) {
+    current.message = sanitizeText(current.message);
+    entries.push(current);
+  }
+
+  return entries;
+}
+
+function parseQqTxtEntries(content: string) {
+  const lines = content.replace(/\r/g, "").split("\n");
+  const entries: ParsedChatEntry[] = [];
+  let current: ParsedChatEntry | null = null;
+
+  for (const line of lines) {
+    const safeLine = line.trimEnd();
+    const match = safeLine.match(qqTxtHeaderPattern);
+    if (match) {
+      if (current?.message.trim()) {
+        current.message = sanitizeText(current.message);
+        entries.push(current);
+      }
+      current = {
+        timestamp: match[1],
+        speaker: sanitizeText(match[2]),
+        message: "",
+        hour: parseHourFromTimestamp(match[1]),
+      };
+      continue;
+    }
+
+    if (!current) continue;
+    if (!safeLine.trim() || safeLine.startsWith("===") || safeLine.startsWith("消息")) continue;
+    current.message = current.message ? `${current.message}\n${safeLine}` : safeLine;
+  }
+
+  if (current?.message.trim()) {
+    current.message = sanitizeText(current.message);
+    entries.push(current);
+  }
+
+  return entries;
+}
+
+function parseLiuhenJsonEntries(content: string) {
+  try {
+    const data = JSON.parse(content) as unknown;
+    const list = Array.isArray(data)
+      ? data
+      : typeof data === "object" && data
+        ? ((data as { messages?: unknown; data?: unknown }).messages
+          ?? (data as { messages?: unknown; data?: unknown }).data
+          ?? [])
+        : [];
+    if (!Array.isArray(list)) return [];
+
+    return list
+      .map((item) => {
+        if (!item || typeof item !== "object") return null;
+        const record = item as Record<string, unknown>;
+        const timestamp = String(
+          record.time
+          ?? record.timestamp
+          ?? record.date
+          ?? "",
+        ).trim();
+        const speaker = sanitizeText(
+          String(record.sender ?? record.nickname ?? record.from ?? ""),
+        );
+        const message = sanitizeText(
+          String(record.content ?? record.message ?? record.text ?? ""),
+        );
+        if (!speaker || !message) return null;
+        return {
+          timestamp: timestamp || undefined,
+          speaker,
+          message,
+          hour: parseHourFromTimestamp(timestamp),
+        } as ParsedChatEntry;
+      })
+      .filter((item): item is ParsedChatEntry => Boolean(item));
+  } catch {
+    return [];
+  }
+}
+
+function stripHtmlToText(content: string) {
+  return sanitizeText(
+    content
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, "\n")
+      .replace(/&nbsp;/gi, " ")
+      .replace(/&amp;/gi, "&")
+      .replace(/&lt;/gi, "<")
+      .replace(/&gt;/gi, ">"),
+  );
+}
+
+function detectExSkillChatEntries(title: string, content: string) {
+  const lowerTitle = title.toLowerCase();
+  const normalizedContent = lowerTitle.endsWith(".html") || lowerTitle.endsWith(".htm")
+    ? stripHtmlToText(content)
+    : content;
+
+  const candidates: Array<{ format: string; entries: ParsedChatEntry[] }> = [
+    { format: "liuhen_json", entries: lowerTitle.endsWith(".json") ? parseLiuhenJsonEntries(normalizedContent) : [] },
+    { format: "wechatmsg_txt", entries: parseWechatTxtEntries(normalizedContent) },
+    { format: "qq_txt", entries: parseQqTxtEntries(normalizedContent) },
+    {
+      format: "line",
+      entries: normalizedContent
+        .split("\n")
+        .map((line) => parseChatLine(line))
+        .filter((item): item is ParsedChatEntry => Boolean(item)),
+    },
+  ];
+
+  return candidates.sort((left, right) => right.entries.length - left.entries.length)[0] ?? {
+    format: "line",
+    entries: [],
+  };
 }
 
 function scoreSkills(text: string, reasonsPrefix: string) {
@@ -141,46 +384,74 @@ export function parseManualInput(title: string, content: string) {
   return parseMarkdownText(`src-manual-${simpleHash(`${title}-${content}`)}`, title, content);
 }
 
-function analyzeChatLog(id: string, title: string, content: string) {
-  const lines = sanitizeText(content).split("\n");
+function analyzeChatLog(
+  id: string,
+  title: string,
+  content: string,
+) {
+  const sanitizedContent = content.replace(/\r/g, "");
   const speakers = new Set<string>();
   const activeHours = new Array<number>();
+  const detected = detectExSkillChatEntries(title, sanitizedContent);
+  const parsedEntries = detected.entries;
   let messageCount = 0;
-  let matches = 0;
+  const matches = parsedEntries.length;
 
-  lines.forEach((line) => {
-    const match = line.match(chatLinePattern);
-    if (!match) return;
-    matches += 1;
+  parsedEntries.forEach((entry) => {
     messageCount += 1;
-    speakers.add(match[3]);
-    const hour = Number(match[2].slice(0, 2));
-    if (!Number.isNaN(hour)) activeHours.push(hour);
+    speakers.add(entry.speaker);
+    if (entry.hour !== null) activeHours.push(entry.hour);
   });
 
-  const excerpt = lines.slice(0, 40).join("\n").slice(0, 1400);
+  const selfEntries = parsedEntries.filter((entry) => speakerIsAutoDetectedSelf(entry.speaker));
+
+  if (!selfEntries.length) {
+    throw new Error(
+      `聊天记录 ${title} 无法自动识别本人发言。当前只支持导出后会把你的消息标成“我”或 “me” 的聊天格式。`,
+    );
+  }
+
+  const selectedEntries = selfEntries;
+  const selectedLines = selectedEntries.map((entry) => entry.message);
+  const excerpt = sanitizeText(selectedLines.slice(0, 40).join("\n")).slice(0, 1400);
   const skills = scoreSkills(excerpt, `${title} 聊天记录`);
   skills.push({
     name: "Collaboration Signal",
-    score: 68,
-    reasons: ["聊天记录能反映协作语气、反馈方式和活跃时间"],
+    score: 74,
+    reasons: [
+      "只保留你在聊天中的发言，减少他人内容对人格蒸馏的干扰",
+    ],
   });
 
+  const baseHints = collaborationHintsFromText(excerpt);
+
   return {
-    ...baseSource(id, "chat", title, excerpt, {
-      messageCount,
-      matchedLines: matches,
-      speakers: speakers.size,
-      activeWindow:
-        activeHours.length > 0
-          ? `${Math.min(...activeHours)}:00-${Math.max(...activeHours)}:00`
-          : "unknown",
-    }, skills),
+    ...baseSource(
+      id,
+      "chat",
+      title,
+      excerpt,
+      {
+        messageCount,
+        matchedLines: matches,
+        speakers: speakers.size,
+        chatFormat: detected.format,
+        selfMessages: selfEntries.length,
+        selectedMessages: selectedEntries.length,
+        extractionMode: "self_only",
+        extractionBasis: "auto_self_marker",
+        activeWindow:
+          activeHours.length > 0
+            ? `${Math.min(...activeHours)}:00-${Math.max(...activeHours)}:00`
+            : "unknown",
+      },
+      skills,
+    ),
     collaborationHints: {
-      shipVelocity: activeHours.some((hour) => hour >= 22) ? 62 : 54,
-      ambiguityFit: 58,
-      feedbackEnergy: title.includes("review") ? 66 : 56,
-      syncRhythm: speakers.size > 2 ? 64 : 50,
+      shipVelocity: clamp((baseHints.shipVelocity ?? 52) + (activeHours.some((hour) => hour >= 22) ? 8 : 0), 12, 92),
+      ambiguityFit: clamp(baseHints.ambiguityFit ?? 58, 12, 92),
+      feedbackEnergy: clamp((baseHints.feedbackEnergy ?? 56) + (title.includes("review") ? 10 : 0), 12, 92),
+      syncRhythm: clamp((baseHints.syncRhythm ?? 50) + (speakers.size > 2 ? 10 : 0), 12, 92),
     },
   } satisfies ParsedSource;
 }
@@ -243,18 +514,69 @@ async function extractImageSignals(file: File) {
   };
 }
 
-function fileTypeFor(file: File) {
-  const lower = file.name.toLowerCase();
+function fileTypeForName(fileName: string): UploadFileKind {
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith(".zip")) return "zip";
   if (lower.endsWith(".pdf")) return "pdf";
   if (/\.(md|mdx)$/.test(lower)) return "markdown";
   if (/\.(png|jpg|jpeg|webp)$/.test(lower)) return "image";
-  if (/\.(txt|csv|json|html|htm)$/.test(lower)) return "chat";
+  if (/\.(txt|csv|json|html|htm|log)$/.test(lower)) return "chat";
   return "text";
 }
 
-export async function parseFile(file: File): Promise<ParsedSource> {
+function mimeTypeForName(fileName: string) {
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith(".pdf")) return "application/pdf";
+  if (/\.(md|mdx)$/.test(lower)) return "text/markdown";
+  if (/\.(png)$/.test(lower)) return "image/png";
+  if (/\.(jpg|jpeg)$/.test(lower)) return "image/jpeg";
+  if (/\.(webp)$/.test(lower)) return "image/webp";
+  return "text/plain";
+}
+
+function isArchiveEntrySupported(entryName: string) {
+  return /\.(zip|pdf|md|mdx|png|jpg|jpeg|webp|txt|csv|json|html|htm|log)$/i.test(entryName);
+}
+
+function basenameFromEntryName(entryName: string) {
+  return entryName.split(/[/\\]/).filter(Boolean).pop() ?? entryName;
+}
+
+function cloneBytes(bytes: Uint8Array) {
+  return Uint8Array.from(bytes);
+}
+
+function decorateArchiveSource(
+  source: ParsedSource,
+  archiveName: string,
+  entryName: string,
+): ParsedSource {
+  const nextId = `src-${simpleHash(`${archiveName}-${entryName}-${source.id}`)}`;
+  const nextTitle = source.title.includes(" · ")
+    ? `${archiveName} · ${source.title}`
+    : `${archiveName} · ${entryName}`;
+
+  return {
+    ...source,
+    id: nextId,
+    title: nextTitle,
+    stats: {
+      ...source.stats,
+      archive: archiveName,
+      entry: entryName,
+    },
+    evidence: source.evidence.map((entry, index) => ({
+      ...entry,
+      id: `${nextId}-ev-${index}`,
+      sourceId: nextId,
+      title: nextTitle,
+    })),
+  };
+}
+
+async function parseSingleFile(file: File): Promise<ParsedSource> {
   const id = `src-${simpleHash(`${file.name}-${file.size}-${file.lastModified}`)}`;
-  const type = fileTypeFor(file);
+  const type = fileTypeForName(file.name);
 
   if (type === "pdf") {
     let text = "";
@@ -301,6 +623,92 @@ export async function parseFile(file: File): Promise<ParsedSource> {
   }
 
   return parseMarkdownText(id, file.name, text);
+}
+
+async function parseArchiveFile(
+  file: File,
+  options: ParseUploadOptions = {},
+): Promise<ParsedSource[]> {
+  const archiveBytes = new Uint8Array(await file.arrayBuffer());
+  const entries = unzipSync(archiveBytes);
+  const parsedSources: ParsedSource[] = [];
+  let totalBytes = 0;
+
+  for (const [entryName, entryBytes] of Object.entries(entries)) {
+    if (parsedSources.length >= ARCHIVE_ENTRY_LIMIT) break;
+    if (!entryName || entryName.endsWith("/")) continue;
+    if (entryName.startsWith("__MACOSX/")) continue;
+    if (!isArchiveEntrySupported(entryName)) continue;
+    if (entryBytes.byteLength > ARCHIVE_ENTRY_BYTES_LIMIT) continue;
+
+    totalBytes += entryBytes.byteLength;
+    if (totalBytes > ARCHIVE_TOTAL_BYTES_LIMIT) break;
+
+    const kind = fileTypeForName(entryName);
+
+    if (kind === "zip") {
+      if ((options.archiveDepth ?? 0) >= 1) continue;
+      const nestedArchive = new File([cloneBytes(entryBytes)], basenameFromEntryName(entryName), {
+        type: "application/zip",
+      });
+      const nestedSources = await parseArchiveFile(nestedArchive, {
+        ...options,
+        archiveDepth: (options.archiveDepth ?? 0) + 1,
+      });
+      parsedSources.push(
+        ...nestedSources.map((source) => decorateArchiveSource(source, file.name, entryName)),
+      );
+      continue;
+    }
+
+    if (kind === "chat" || kind === "markdown" || kind === "text") {
+      const textContent = strFromU8(entryBytes);
+      const source = kind === "chat"
+        ? analyzeChatLog(
+          `src-${simpleHash(`${file.name}-${entryName}`)}`,
+          entryName,
+          textContent,
+        )
+        : parseMarkdownText(
+          `src-${simpleHash(`${file.name}-${entryName}`)}`,
+          entryName,
+          textContent,
+        );
+      parsedSources.push(decorateArchiveSource(source, file.name, entryName));
+      continue;
+    }
+
+    const nestedFile = new File([cloneBytes(entryBytes)], basenameFromEntryName(entryName), {
+      type: mimeTypeForName(entryName),
+    });
+    const source = await parseSingleFile(nestedFile);
+    parsedSources.push(decorateArchiveSource(source, file.name, entryName));
+  }
+
+  if (!parsedSources.length) {
+    throw new Error("压缩包里没有可解析的聊天记录、项目文档、图片或 PDF。");
+  }
+
+  return parsedSources.slice(0, ARCHIVE_ENTRY_LIMIT);
+}
+
+export async function parseUploadFile(
+  file: File,
+  options: ParseUploadOptions = {},
+): Promise<ParsedSource[]> {
+  if (fileTypeForName(file.name) === "zip") {
+    return parseArchiveFile(file, options);
+  }
+
+  return [await parseSingleFile(file)];
+}
+
+export async function parseFile(
+  file: File,
+  options: ParseUploadOptions = {},
+): Promise<ParsedSource> {
+  void options;
+  return parseSingleFile(file);
 }
 
 async function fetchGitHubJson<T>(url: string) {

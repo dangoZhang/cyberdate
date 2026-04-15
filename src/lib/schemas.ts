@@ -6,7 +6,15 @@ const axisKeySchema = z.enum([
   "feedbackEnergy",
   "syncRhythm",
 ]);
-const sbtiCodeSchema = z.string().regex(/^[SD][BA][TR][IS]$/);
+const attachmentStyleSchema = z.enum(["安全型", "焦虑型", "回避型", "混乱型"]);
+const loveLanguageSchema = z.enum([
+  "肯定的言辞",
+  "精心的时刻",
+  "接受礼物",
+  "服务的行动",
+  "身体的接触",
+]);
+const sbtiCodeSchema = z.string().min(3).max(12);
 const mbtiCodeSchema = z.string().regex(/^[EI][SN][TF][JP]$/);
 const imsbCodeSchema = z.string().regex(/^(IM|IS|IB|MI|MS|MB|SI|SM|SB|BI|BM|BS)$/);
 
@@ -34,7 +42,7 @@ export const quizResultSchema = z.object({
 export const personalityAnswerSchema = z.object({
   id: z.string(),
   prompt: z.string(),
-  answer: z.enum(["A", "B"]),
+  answer: z.enum(["A", "B", "C"]),
   rationale: z.string(),
 });
 
@@ -52,11 +60,39 @@ export const imsbResultSchema = quizResultSchema.extend({
   }),
 });
 
+export const mbti64ResultSchema = z.object({
+  baseCode: mbtiCodeSchema,
+  code: z.string(),
+  variantKey: z.enum(["driven", "steady", "expressive", "reflective"]),
+  label: z.string(),
+  summary: z.string(),
+});
+
+export const exSkillLabelProfileSchema = z.object({
+  attachmentStyle: attachmentStyleSchema,
+  loveLanguages: z.array(loveLanguageSchema),
+  traitTags: z.array(z.string()),
+  zodiac: z.string().nullable(),
+  mbti64: mbti64ResultSchema,
+});
+
+export const exSkillCoreProfileSchema = z.object({
+  relationshipMemory: z.string(),
+  persona: z.string(),
+  skillPrompt: z.string(),
+  labels: exSkillLabelProfileSchema,
+});
+
 export const sbtiArchetypeSchema = z.object({
   code: sbtiCodeSchema,
   title: z.string(),
   summary: z.string(),
   meme: z.string(),
+  imagePath: z.string().optional(),
+  badge: z.string().optional(),
+  similarity: z.number().optional(),
+  pattern: z.string().optional(),
+  levels: z.record(z.string(), z.enum(["L", "M", "H"])).optional(),
 });
 
 export const distilledSkillProfileSchema = z.object({
@@ -163,6 +199,7 @@ export const twinCardSchema = z.object({
   skillProfile: distilledSkillProfileSchema.optional(),
   memoryProfile: distilledMemoryProfileSchema.optional(),
   personaProfile: distilledPersonaProfileSchema.optional(),
+  exSkill: exSkillCoreProfileSchema.optional(),
   personalityAnswers: z.object({
     mbti: z.array(personalityAnswerSchema),
     sbti: z.array(personalityAnswerSchema),
@@ -179,6 +216,70 @@ export const sharePreviewSchema = z.object({
   headline: z.string(),
   capsule: z.string(),
   sbtiCode: z.string(),
+});
+
+export const matchProfileSchema = z.object({
+  enabled: z.boolean(),
+  age: z.number().int().min(18).max(99).nullable(),
+  gender: z.string(),
+  city: z.string(),
+  education: z.string(),
+  bio: z.string(),
+  lookingFor: z.string(),
+  normalizedTags: z.array(z.string()),
+  updatedAt: z.string(),
+});
+
+export const matchScoreBreakdownSchema = z.object({
+  skill: z.number(),
+  goal: z.number(),
+  style: z.number(),
+  personality: z.number(),
+  context: z.number(),
+  tags: z.number(),
+  fairness: z.number(),
+  repeatPenalty: z.number(),
+});
+
+export const exchangeMessageSchema = z.object({
+  id: z.string(),
+  author: z.enum(["you", "them"]),
+  mode: z.enum(["auto", "manual"]),
+  content: z.string(),
+  createdAt: z.string(),
+});
+
+export const matchSuggestionSchema = z.object({
+  id: z.string(),
+  dayKey: z.string(),
+  targetAccountId: z.string(),
+  alias: z.string(),
+  role: z.string(),
+  headline: z.string(),
+  summary: z.string(),
+  age: z.number().int().min(18).max(99).nullable(),
+  gender: z.string(),
+  city: z.string(),
+  education: z.string(),
+  mbtiCode: mbtiCodeSchema,
+  sbtiCode: sbtiCodeSchema,
+  skills: z.array(
+    z.object({
+      name: z.string(),
+      confidence: z.number(),
+      rationale: z.string(),
+    }),
+  ),
+  reasons: z.array(z.string()),
+  score: z.number(),
+  scoreBreakdown: matchScoreBreakdownSchema,
+  autoExchange: z.object({
+    messages: z.array(exchangeMessageSchema),
+    summary: z.string(),
+    nextLine: z.string(),
+    consumedSentences: z.number(),
+  }),
+  createdAt: z.string(),
 });
 
 export const publicShareEnvelopeSchema = z.object({

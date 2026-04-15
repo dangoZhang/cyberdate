@@ -41,6 +41,14 @@ export function buildShareCode(alias: string, stableSeed: string) {
   return `CD-${aliasPart}-${seedPart}`;
 }
 
+export function resolveTwinShareCode(
+  alias: string,
+  accountId: string,
+  previousShareCode?: string | null,
+) {
+  return previousShareCode ?? buildShareCode(alias, accountId);
+}
+
 export function scoreLabel(score: number) {
   if (score >= 80) return "高";
   if (score >= 60) return "中";

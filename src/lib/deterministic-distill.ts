@@ -9,14 +9,17 @@ import {
   buildMbtiResult,
   buildSbtiResult,
   scoreMbtiAnswers,
-  scoreSbtiAnswers,
   SBTI_QUESTION_BANK,
 } from "@/lib/personality-quiz";
+import { projectExSkillProfiles } from "@/lib/ex-skill-core";
+import { buildFallbackExSkillCoreProfile } from "@/lib/ex-skill-fallback";
+import {
+  answerFromSbtiLevel,
+  sbtiLevelsFromHeuristics,
+  type SbtiTestLevel,
+} from "@/lib/sbti-test";
 import type {
   CollaborationAxis,
-  DistilledMemoryProfile,
-  DistilledPersonaProfile,
-  DistilledSkillProfile,
   EvidenceFragment,
   ImsbResult,
   PersonalityAnswer,
@@ -189,121 +192,6 @@ function inferImsb(skills: SkillTag[], goals: string[]): ImsbResult {
   };
 }
 
-function skillOverview(alias: string, role: string, skills: SkillTag[]) {
-  const names = skills.slice(0, 3).map((skill) => skill.name).join("、");
-  return `${alias} 当前蒸馏出的主要能力集中在 ${names || "跨域协作"}，角色画像偏 ${role || "builder"}。`;
-}
-
-function buildSkillProfile(
-  bundle: SignalBundle,
-  skills: SkillTag[],
-  evidence: EvidenceFragment[],
-  previousTwin?: TwinCard,
-): DistilledSkillProfile {
-  const coreStrengths = skills
-    .slice(0, 4)
-    .map((skill) => `${skill.name}：${skill.rationale}`);
-  const workingSignals = dedupe([
-    ...bundle.sources.map((source) => `${source.title} · ${source.kind}`),
-    ...(previousTwin?.skillProfile?.workingSignals ?? []),
-  ]).slice(0, 4);
-  const evidenceNotes = evidence
-    .map((item) => `${item.title}：${item.quote}`)
-    .slice(0, 4);
-
-  return {
-    overview: skillOverview(bundle.profile.alias, bundle.profile.role, skills),
-    coreStrengths,
-    workingSignals,
-    evidenceNotes,
-  };
-}
-
-function buildMemoryProfile(
-  bundle: SignalBundle,
-  evidence: EvidenceFragment[],
-  previousTwin?: TwinCard,
-): DistilledMemoryProfile {
-  const sourceTitles = bundle.sources.map((source) => source.title);
-  const timeline = dedupe([
-    ...sourceTitles.slice(0, 4).map((title, index) => `阶段 ${index + 1}：来自 ${title} 的线索`),
-    ...(previousTwin?.memoryProfile?.timeline ?? []),
-  ]).slice(0, 6);
-
-  const routines = dedupe([
-    ...bundle.sources.slice(0, 4).map((source) => `材料里出现过 ${source.kind} 类型记录：${source.title}`),
-    ...(previousTwin?.memoryProfile?.routines ?? []),
-  ]).slice(0, 4);
-
-  const sharedContexts = dedupe([
-    ...evidence.slice(0, 4).map((item) => item.title),
-    bundle.profile.timezone,
-    ...bundle.profile.languages,
-    ...(previousTwin?.memoryProfile?.sharedContexts ?? []),
-  ]).slice(0, 6);
-
-  return {
-    overview: `这份 twin 参考了 ${bundle.sources.length} 份前端解析材料，只保留蒸馏后的结构化线索。`,
-    timeline,
-    routines,
-    sharedContexts,
-  };
-}
-
-function speakingStyleFromBundle(bundle: SignalBundle) {
-  const hasChat = bundle.sources.some((source) => source.kind === "chat");
-  const hasRepo = bundle.sources.some((source) => source.kind === "github");
-
-  return dedupe([
-    hasChat ? "说话习惯优先参考聊天记录的节奏和句式。" : "缺少聊天记录时，以上传文字材料里的表达方式为准。",
-    hasRepo ? "GitHub README 和目录结构会补充工作语境。" : "表达风格主要从文本和图片 OCR 信号中归纳。",
-  ]);
-}
-
-function buildPersonaProfile(
-  bundle: SignalBundle,
-  axes: CollaborationAxis[],
-  previousTwin?: TwinCard,
-): DistilledPersonaProfile {
-  const ship = axes.find((axis) => axis.key === "shipVelocity")?.score ?? 50;
-  const ambiguity = axes.find((axis) => axis.key === "ambiguityFit")?.score ?? 50;
-  const feedback = axes.find((axis) => axis.key === "feedbackEnergy")?.score ?? 50;
-  const sync = axes.find((axis) => axis.key === "syncRhythm")?.score ?? 50;
-
-  const emotionalPattern = [
-    feedback >= 60 ? "表达会先落结论，反馈直达问题本身。" : "表达更克制，倾向先观察再回应。",
-    sync >= 56 ? "高频同步更舒服，适合边聊边推进。" : "更适合低打扰、强异步的协作方式。",
-  ];
-
-  const collaborationPattern = [
-    ship >= 58 ? "推进时会先做出一个可验证的版本。" : "推进前会先补边界、判断风险。",
-    ambiguity >= 55 ? "信息不完整时也能先启动。" : "更依赖清晰约束和证据后再行动。",
-  ];
-
-  return {
-    overview:
-      previousTwin?.personaProfile?.overview ??
-      `${bundle.profile.alias} 的对外形象更像一个有边界感的职业分身，重点反映协作方式和表达习惯。`,
-    speakingStyle: dedupe([
-      ...speakingStyleFromBundle(bundle),
-      ...(previousTwin?.personaProfile?.speakingStyle ?? []),
-    ]).slice(0, 4),
-    emotionalPattern: dedupe([
-      ...emotionalPattern,
-      ...(previousTwin?.personaProfile?.emotionalPattern ?? []),
-    ]).slice(0, 4),
-    collaborationPattern: dedupe([
-      ...collaborationPattern,
-      ...(previousTwin?.personaProfile?.collaborationPattern ?? []),
-    ]).slice(0, 4),
-    boundaries: dedupe([
-      "只保留蒸馏后的 skill 结构，不保留原始上传材料。",
-      "人格结果只反映上传材料中的稳定线索，不代表官方测评。",
-      ...(previousTwin?.personaProfile?.boundaries ?? []),
-    ]).slice(0, 4),
-  };
-}
-
 function mbtiFallback(axes: CollaborationAxis[]) {
   const ship = axes.find((axis) => axis.key === "shipVelocity")?.score ?? 50;
   const ambiguity = axes.find((axis) => axis.key === "ambiguityFit")?.score ?? 50;
@@ -318,33 +206,6 @@ function mbtiFallback(axes: CollaborationAxis[]) {
   ] as const;
 }
 
-function sbtiFallback(axes: CollaborationAxis[]) {
-  const ship = axes.find((axis) => axis.key === "shipVelocity")?.score ?? 50;
-  const ambiguity = axes.find((axis) => axis.key === "ambiguityFit")?.score ?? 50;
-  const feedback = axes.find((axis) => axis.key === "feedbackEnergy")?.score ?? 50;
-  const sync = axes.find((axis) => axis.key === "syncRhythm")?.score ?? 50;
-
-  return [
-    ship >= 58 ? "S" : "D",
-    ambiguity >= 55 ? "B" : "A",
-    feedback >= 55 ? "T" : "R",
-    sync <= 52 ? "I" : "S",
-  ] as const;
-}
-
-function rationaleFromProfiles(
-  skillProfile: DistilledSkillProfile,
-  personaProfile: DistilledPersonaProfile,
-  index: number,
-) {
-  return (
-    skillProfile.coreStrengths[index % skillProfile.coreStrengths.length] ??
-    personaProfile.collaborationPattern[index % personaProfile.collaborationPattern.length] ??
-    personaProfile.speakingStyle[index % personaProfile.speakingStyle.length] ??
-    "材料里存在对应的稳定线索。"
-  );
-}
-
 function buildDeterministicAnswers(
   bank: Array<{
     id: string;
@@ -352,8 +213,7 @@ function buildDeterministicAnswers(
     dimension: readonly [string, string];
   }>,
   code: string,
-  skillProfile: DistilledSkillProfile,
-  personaProfile: DistilledPersonaProfile,
+  rationalePool: string[],
 ) {
   return bank.map((item, index): PersonalityAnswer => {
     const preferred = code.includes(item.dimension[0]) ? "A" : "B";
@@ -361,9 +221,21 @@ function buildDeterministicAnswers(
       id: item.id,
       prompt: item.prompt,
       answer: preferred,
-      rationale: rationaleFromProfiles(skillProfile, personaProfile, index),
+      rationale: rationalePool[index % rationalePool.length] ?? "材料里存在对应的稳定线索。",
     };
   });
+}
+
+function buildDeterministicSbtiAnswers(
+  levels: Partial<Record<string, SbtiTestLevel>>,
+  rationalePool: string[],
+) {
+  return SBTI_QUESTION_BANK.map((item, index): PersonalityAnswer => ({
+    id: item.id,
+    prompt: item.prompt,
+    answer: answerFromSbtiLevel(levels[item.dimension] ?? "M"),
+    rationale: rationalePool[index % rationalePool.length] ?? "材料里存在对应的稳定线索。",
+  }));
 }
 
 function headlineFor(alias: string, role: string, skills: SkillTag[], goals: string[]) {
@@ -396,11 +268,37 @@ export function distillSignalBundleWithBaseline(
     ...bundle.profile.languages,
     ...(previousTwin?.languages ?? []),
   ]).slice(0, 4);
-  const skillProfile = buildSkillProfile(bundle, skills, evidence, previousTwin);
-  const memoryProfile = buildMemoryProfile(bundle, evidence, previousTwin);
-  const personaProfile = buildPersonaProfile(bundle, axes, previousTwin);
   const mbtiSeed = mbtiFallback(axes);
-  const sbtiSeed = sbtiFallback(axes);
+  const sbtiSeed = sbtiLevelsFromHeuristics({
+    shipVelocity: axes.find((axis) => axis.key === "shipVelocity")?.score ?? 50,
+    ambiguityFit: axes.find((axis) => axis.key === "ambiguityFit")?.score ?? 50,
+    feedbackEnergy: axes.find((axis) => axis.key === "feedbackEnergy")?.score ?? 50,
+    syncRhythm: axes.find((axis) => axis.key === "syncRhythm")?.score ?? 50,
+    goalsCount: goals.length,
+    languagesCount: languages.length,
+    evidenceCount: evidence.length,
+  });
+  const initialExSkill = buildFallbackExSkillCoreProfile(
+    bundle,
+    skills,
+    evidence,
+    axes,
+    mbtiSeed.join(""),
+    previousTwin,
+  );
+  const initialProfiles = projectExSkillProfiles(
+    bundle,
+    skills,
+    evidence,
+    initialExSkill,
+    previousTwin,
+  );
+  const rationalePool = dedupe([
+    ...initialProfiles.personaProfile.speakingStyle,
+    ...initialProfiles.personaProfile.emotionalPattern,
+    ...initialProfiles.personaProfile.collaborationPattern,
+    ...initialProfiles.skillProfile.coreStrengths,
+  ]);
   const mbtiAnswers = buildDeterministicAnswers(
     MBTI_QUESTIONS.map((item) => ({
       id: item.id,
@@ -408,28 +306,36 @@ export function distillSignalBundleWithBaseline(
       dimension: item.dimension,
     })),
     mbtiSeed.join(""),
-    skillProfile,
-    personaProfile,
+    rationalePool,
   );
-  const sbtiAnswers = buildDeterministicAnswers(
-    SBTI_QUESTION_BANK.map((item) => ({
-      id: item.id,
-      prompt: item.prompt,
-      dimension: item.dimension,
-    })),
-    sbtiSeed.join(""),
-    skillProfile,
-    personaProfile,
+  const normalizedSbtiAnswers = buildDeterministicSbtiAnswers(
+    sbtiSeed,
+    rationalePool,
   );
   const mbti = buildMbtiResult(
     scoreMbtiAnswers(mbtiAnswers, mbtiSeed),
     mbtiAnswers,
   );
   const sbti = buildSbtiResult(
-    scoreSbtiAnswers(sbtiAnswers, sbtiSeed),
-    sbtiAnswers,
+    "HHHH",
+    normalizedSbtiAnswers,
   );
   const imsb = inferImsb(skills, goals);
+  const exSkill = buildFallbackExSkillCoreProfile(
+    bundle,
+    skills,
+    evidence,
+    axes,
+    mbti.code,
+    previousTwin,
+  );
+  const { skillProfile, memoryProfile, personaProfile } = projectExSkillProfiles(
+    bundle,
+    skills,
+    evidence,
+    exSkill,
+    previousTwin,
+  );
 
   return {
     id: crypto.randomUUID(),
@@ -460,9 +366,10 @@ export function distillSignalBundleWithBaseline(
     skillProfile,
     memoryProfile,
     personaProfile,
+    exSkill,
     personalityAnswers: {
       mbti: mbtiAnswers,
-      sbti: sbtiAnswers,
+      sbti: normalizedSbtiAnswers,
     },
     autoMatchEnabled: true,
     autoChatEnabled: true,

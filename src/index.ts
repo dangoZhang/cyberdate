@@ -2,6 +2,7 @@ export * from "@/lib/constants";
 export * from "@/lib/content-safety";
 export * from "@/lib/deterministic-distill";
 export * from "@/lib/display-text";
+export * from "@/lib/ex-skill-core";
 export * from "@/lib/personality-guide";
 export * from "@/lib/personality-quiz";
 export * from "@/lib/schemas";

@@ -1,49 +1,46 @@
 # CyberDate
 
-> Public trust-facing core for CyberDate.
+> 上传你的经历，看见你的赛博灵魂。
 
-- Web: [skill-deploy-c7c76y96ge-codex-agent-deploys.vercel.app](https://skill-deploy-c7c76y96ge-codex-agent-deploys.vercel.app)
-- Scope: local parsing, skill distill, MBTI / SBTI scoring, skill file generation, safety filter, zero-retention boundary
+[正式网站](https://cyberdate-five.vercel.app)
 
-## What This Public Repo Contains
+CyberDate 把聊天记录、项目文档、README、图片或 GitHub 仓库蒸馏成一个可分享的 skill twin。
 
-- 聊天记录、PDF、Markdown、文本、图片 OCR、GitHub README / repo 的读取与解析
-- 结构化 skill 蒸馏核心
-- MBTI / SBTI / 技能档案生成
-- 黑名单与最小安全文本拼装
-- 对“不存原始上传文件”的实现边界与测试
+你会得到：
 
-## What This Public Repo Does Not Contain
+- MBTI
+- SBTI
+- 关键标签
+- 分享卡
+- 分享码
 
-- 注册登录
-- Cloudflare Turnstile
-- Supabase
-- 分享码解析
-- 匹配与对话
-- 配额、限流、运营策略
-- 部署配置和任何生产密钥
+然后，你还可以把这个 twin 带进赛博世界里继续交友和交流。
 
-## Privacy Boundary
+## 这个公开仓在公开什么
 
-- 网站不保存用户上传的原始文件
-- 网站不保存蒸馏过程中的中间产物
-- 原始文件只在处理窗口内临时使用，处理完成后立即销毁
-- 生产站点会保存账号、skill 文件、分享码、聊天记录，这部分运行时不在这个公开仓里
+这个仓库公开的是 CyberDate 最值得被信任的那一段核心：
 
-## Source Layout
+- 文件读取与前端预处理
+- skill 蒸馏核心
+- MBTI / SBTI / 结果生成
+- 隐私边界实现
 
-- `src/lib/parsers/client.ts`
-- `src/lib/deterministic-distill.ts`
-- `src/lib/display-text.ts`
-- `src/lib/personality-guide.ts`
-- `src/lib/personality-quiz.ts`
-- `src/lib/content-safety.ts`
-- `src/lib/skill-file.ts`
-- `src/lib/constants.ts`
-- `src/lib/schemas.ts`
-- `src/lib/types.ts`
-- `src/lib/utils.ts`
+完整生产系统里的注册登录、分享码解析、匹配、对话、数据库、部署和密钥，不在这个公开仓里。
 
-## Reference
+## 隐私说明
+
+本网站不会保存用户上传的原始文件和原始文本数据。上传内容先在前端完成解析，服务端只接收生成结果必需的最小结构化线索；蒸馏完成后，原始文件和中间产物不落库、不长期保留。只有用户确认发布后的 skill 结果，才会按用户自己的分享设置保存和展示。
+
+## 当前已验证支持
+
+- `.txt` 聊天记录
+- `.md` / `.mdx`
+- `.pdf`
+- `.png` / `.jpg` / `.jpeg` / `.webp`
+- GitHub 仓库链接
+
+未写在这里的格式，当前不对外宣称支持。
+
+## 参考项目
 
 - [therealXiaomanChu/ex-skill](https://github.com/therealXiaomanChu/ex-skill)

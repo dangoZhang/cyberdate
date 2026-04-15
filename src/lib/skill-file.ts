@@ -2,6 +2,7 @@ import { displayRole, displaySkillName } from "@/lib/display-text";
 import type { TwinCard } from "@/lib/types";
 
 export function buildSkillFile(twin: TwinCard) {
+  const labels = twin.exSkill?.labels;
   const lines = [
     `# ${twin.alias} 的技能档案`,
     "",
@@ -22,6 +23,13 @@ export function buildSkillFile(twin: TwinCard) {
     `${twin.sbti.code} · ${twin.sbti.title}`,
     twin.sbti.summary,
     "",
+    "## ex-skill 标签",
+    `依恋类型：${labels?.attachmentStyle ?? "待补充"}`,
+    `爱的语言：${labels?.loveLanguages.join(" · ") || "待补充"}`,
+    `性格标签：${labels?.traitTags.join(" · ") || "待补充"}`,
+    `星座：${labels?.zodiac ?? "待补充"}`,
+    `MBTI 64 子型：${labels?.mbti64.code ?? "待补充"} · ${labels?.mbti64.label ?? "待补充"}`,
+    "",
     "## 技能摘要",
     twin.skillProfile?.overview ?? twin.summary,
     ...(twin.skillProfile?.coreStrengths ?? []),
@@ -34,6 +42,12 @@ export function buildSkillFile(twin: TwinCard) {
     "## 记忆线索",
     twin.memoryProfile?.overview ?? "未生成详细记忆线索。",
     ...(twin.memoryProfile?.timeline ?? []),
+    "",
+    "## Relationship Memory",
+    twin.exSkill?.relationshipMemory ?? "未生成 Relationship Memory。",
+    "",
+    "## Persona",
+    twin.exSkill?.persona ?? "未生成 Persona。",
     "",
     "## 证据片段",
     ...twin.evidence.map(

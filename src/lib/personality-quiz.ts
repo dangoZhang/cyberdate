@@ -1,4 +1,10 @@
 import { getMbtiGuide, getSbtiGuide } from "@/lib/personality-guide";
+import {
+  SBTI_TEST_QUESTION_BANK,
+  buildSbtiTestResult,
+  scoreSbtiTestAnswers,
+  type SbtiTestLevel,
+} from "@/lib/sbti-test";
 import type {
   PersonalityAnswer,
   QuizResult,
@@ -6,7 +12,6 @@ import type {
 } from "@/lib/types";
 
 type MbtiDimension = readonly ["E", "I"] | readonly ["S", "N"] | readonly ["T", "F"] | readonly ["J", "P"];
-type SbtiDimension = readonly ["S", "D"] | readonly ["B", "A"] | readonly ["T", "R"] | readonly ["I", "S"];
 
 type QuestionPair<TDimension extends readonly [string, string]> = {
   id: string;
@@ -66,56 +71,7 @@ export const MBTI_QUESTION_BANK: QuestionPair<MbtiDimension>[] = [
   },
 ];
 
-export const SBTI_QUESTION_BANK: QuestionPair<SbtiDimension>[] = [
-  {
-    id: "sbti-sd-1",
-    dimension: ["S", "D"],
-    prompt: "面对模糊目标时，他更常见的动作是：",
-    options: ["先压出能跑的最小版本", "先把边界和方案想清楚"],
-  },
-  {
-    id: "sbti-sd-2",
-    dimension: ["S", "D"],
-    prompt: "要证明一个想法可行时，他更偏向：",
-    options: ["尽快做演示拿反馈", "先推演风险再决定要不要做"],
-  },
-  {
-    id: "sbti-ba-1",
-    dimension: ["B", "A"],
-    prompt: "信息不完整时，他更可能：",
-    options: ["先往前拱，边做边补约束", "先补证据，再进入执行"],
-  },
-  {
-    id: "sbti-ba-2",
-    dimension: ["B", "A"],
-    prompt: "遇到未知问题时，他更像：",
-    options: ["先试一个方向再收束", "先把变量列清楚再出手"],
-  },
-  {
-    id: "sbti-tr-1",
-    dimension: ["T", "R"],
-    prompt: "在协作里指出问题时，他更像：",
-    options: ["直说核心问题，不绕", "先观察语境，再留余地表达"],
-  },
-  {
-    id: "sbti-tr-2",
-    dimension: ["T", "R"],
-    prompt: "面对分歧时，他更容易：",
-    options: ["快速抛出判断和立场", "先消化，再给出态度"],
-  },
-  {
-    id: "sbti-is-1",
-    dimension: ["I", "S"],
-    prompt: "默认工作节奏上，他更适合：",
-    options: ["低打扰、强异步推进", "边聊边改、高频同步"],
-  },
-  {
-    id: "sbti-is-2",
-    dimension: ["I", "S"],
-    prompt: "合作推进方式上，他更舒服的是：",
-    options: ["各自推进，关键节点对齐", "持续共创，随时同步状态"],
-  },
-];
+export const SBTI_QUESTION_BANK = SBTI_TEST_QUESTION_BANK;
 
 function tallyAnswers(
   answers: PersonalityAnswer[],
@@ -159,16 +115,9 @@ export function scoreMbtiAnswers(
 
 export function scoreSbtiAnswers(
   answers: PersonalityAnswer[],
-  fallback: readonly [string, string, string, string],
+  fallback?: Partial<Record<string, SbtiTestLevel>>,
 ) {
-  const score = tallyAnswers(answers, SBTI_QUESTION_BANK);
-  const code = [
-    choosePair(score, ["S", "D"], fallback[0]),
-    choosePair(score, ["B", "A"], fallback[1]),
-    choosePair(score, ["T", "R"], fallback[2]),
-    choosePair(score, ["I", "S"], fallback[3]),
-  ].join("");
-  return code;
+  return scoreSbtiTestAnswers(answers, fallback);
 }
 
 export function buildMbtiResult(code: string, answers: PersonalityAnswer[]): QuizResult {
@@ -187,17 +136,13 @@ export function buildMbtiResult(code: string, answers: PersonalityAnswer[]): Qui
 }
 
 export function buildSbtiResult(code: string, answers: PersonalityAnswer[]): SbtiArchetype {
-  const guide = getSbtiGuide(code);
-  const reasons = answers
-    .map((item) => item.rationale.trim())
-    .filter(Boolean)
-    .slice(0, 2)
-    .join(" ");
+  const result = buildSbtiTestResult(answers);
+  if (result.code === code) return result;
 
+  const guide = getSbtiGuide(result.code);
   return {
-    code,
-    title: guide?.title ?? `${code} 型`,
-    summary: reasons || guide?.description || `${code} 型协作人格来自素材中的推进方式和交流习惯。`,
-    meme: guide?.subtitle ?? "这是一张偏娱乐化的协作人格卡。",
+    ...result,
+    title: guide?.title ?? result.title,
+    meme: guide?.subtitle ?? result.meme,
   };
 }
