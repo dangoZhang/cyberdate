@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./public/readme-share-cover.png" alt="CyberDate" width="100%" />
+  <img src="./public/IMG_5206.png" alt="CyberDate" width="100%" />
 </p>
 
 <h1 align="center">CyberDate</h1>
